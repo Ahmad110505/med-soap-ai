@@ -10,14 +10,17 @@ const jsonPlaceholder = document.getElementById('jsonPlaceholder');
 const downloadBtn = document.getElementById('downloadBtn');
 const saveStatus = document.getElementById('saveStatus');
 
-// NEW: Sidebar Elements
+// NEW: Review Panel
+const reviewPanel = document.getElementById('reviewPanel');
+
+// Sidebar Elements
 const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
 const closeSidebarBtn = document.getElementById('closeSidebarBtn');
 const historySidebar = document.getElementById('historySidebar');
 const pastNotesList = document.getElementById('pastNotesList');
 
 // --- 1. CORE UI LOGIC (Shared by Mic and Sidebar) ---
-function renderSoapNoteToGrid(noteId, soapData) {
+function renderSoapNoteToGrid(noteId, soapData, reviewData) {
     currentNoteId = noteId;
     jsonPlaceholder.style.display = 'none';
     soapGrid.style.display = 'grid';
@@ -44,6 +47,58 @@ function renderSoapNoteToGrid(noteId, soapData) {
         populateList('list-R', soapData.Needs_Review);
     } else {
         document.getElementById('box-R').style.display = 'none';
+    }
+
+    // NEW: Render the Review Panel!
+    if (reviewData) {
+        reviewPanel.style.display = 'block';
+
+        // Quality Summary
+        const ulQuality = document.getElementById('review-quality');
+        ulQuality.innerHTML = '';
+        if (reviewData.note_quality_summary) {
+            reviewData.note_quality_summary.forEach(text => {
+                ulQuality.innerHTML += `<li>${text}</li>`;
+            });
+        }
+
+        // Missing Items
+        const ulMissing = document.getElementById('review-missing');
+        ulMissing.innerHTML = '';
+        if (reviewData.missing_or_incomplete_documentation && reviewData.missing_or_incomplete_documentation.length > 0) {
+            reviewData.missing_or_incomplete_documentation.forEach(item => {
+                ulMissing.innerHTML += `<li><b>${item.item}:</b> ${item.recommendation}</li>`;
+            });
+        } else {
+            ulMissing.innerHTML = '<li>None identified.</li>';
+        }
+
+        // High Risk / Red Flags
+        const ulRisk = document.getElementById('review-risk');
+        ulRisk.innerHTML = '';
+        if (reviewData.high_risk_documentation_prompts && reviewData.high_risk_documentation_prompts.length > 0) {
+            reviewData.high_risk_documentation_prompts.forEach(item => {
+                ulRisk.innerHTML += `<li><b>${item.item}:</b> ${item.recommendation}</li>`;
+            });
+        } else {
+            ulRisk.innerHTML = '<li>None identified.</li>';
+        }
+
+        // ICD-10
+        const ulIcd10 = document.getElementById('review-icd10');
+        ulIcd10.innerHTML = '';
+        if (reviewData.icd10_suggestions_beta && reviewData.icd10_suggestions_beta.length > 0) {
+            reviewData.icd10_suggestions_beta.forEach(item => {
+                ulIcd10.innerHTML += `<li><b>${item.code}</b>: ${item.label} <br><span style="font-size: 11px; color:#94a3b8;">(${item.reason})</span></li>`;
+            });
+        } else {
+            ulIcd10.innerHTML = '<li>No reliable suggestions based on current documentation.</li>';
+        }
+
+        document.getElementById('review-disclaimer').innerText = reviewData.final_disclaimer || "";
+    } else {
+        // If viewing an old case that didn't have review data, hide the panel
+        reviewPanel.style.display = 'none';
     }
 
     setupDragAndDrop();
@@ -120,7 +175,7 @@ recordBtn.onclick = async () => {
 
         mediaRecorder.onstop = async () => {
             recordBtn.classList.remove('recording-pulse');
-            statusText.innerHTML = '🧠 <span style="color: #2563eb;">AI is transcribing and categorizing...</span>';
+            statusText.innerHTML = '🧠 <span style="color: #2563eb;">AI reasoning pipeline active. Transcribing & Drafting...</span>';
 
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             const formData = new FormData();
@@ -130,7 +185,8 @@ recordBtn.onclick = async () => {
                 const response = await fetch('/upload-audio', { method: 'POST', body: formData });
                 const data = await response.json();
                 if (data && data.data) {
-                    renderSoapNoteToGrid(data.note_id, data.data);
+                    // WE NOW PASS THE REVIEW PANEL DATA TO THE UI!
+                    renderSoapNoteToGrid(data.note_id, data.data, data.review_panel);
                 }
             } catch (err) {
                 statusText.innerText = '❌ Error processing response.';
@@ -146,7 +202,7 @@ stopBtn.onclick = () => {
     mediaRecorder.stop();
     recordBtn.disabled = false;
     stopBtn.disabled = true;
-    statusText.innerText = '⏳ Processing...';
+    statusText.innerText = '⏳ Processing... (This might take a few seconds for the multi-layer pipeline)';
 };
 
 // --- 4. SAVE AND EXPORT LOGIC ---
@@ -220,7 +276,8 @@ toggleSidebarBtn.onclick = async () => {
             // When clicked, close sidebar and render the note!
             card.onclick = () => {
                 historySidebar.classList.remove('open');
-                renderSoapNoteToGrid(note.id, note.structured_data);
+                // We pass null for review_panel since it isn't fetched from the DB in this version
+                renderSoapNoteToGrid(note.id, note.structured_data, null);
             };
 
             pastNotesList.appendChild(card);

@@ -41,7 +41,7 @@ class UpdateNoteRequest(BaseModel):
 
 @router.get("/", response_class=HTMLResponse)
 def serve_frontend(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(name= "index.html", request= request)
 
 @router.post("/generate-soap")
 def generate_structured_soap(request: TranscriptRequest, db: Session = Depends(get_db)):

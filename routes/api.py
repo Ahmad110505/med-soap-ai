@@ -1,0 +1,153 @@
+import os
+import logging
+import tempfile
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
+from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from datetime import datetime
+
+# 1. We import Whisper directly here now!
+from faster_whisper import WhisperModel 
+
+# Import our specialized tools from the other files!
+from database import get_db, SoapNoteRecord, FeedbackRecord
+from services.ai_engine import process_text_to_soap  # Notice we removed 'models' from this import
+from pdf_generator import create_soap_pdf
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# Setup HTML Templates
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+
+logger.info("Booting up Whisper")
+whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
+logger.info("  Whisper Model Ready!")
+
+class TranscriptRequest(BaseModel):
+    text: str
+    return_pdf: bool = False
+
+class FeedbackRequest(BaseModel):
+    note_id: int
+    sentence: str
+    correct_label: str
+
+class UpdateNoteRequest(BaseModel):
+    structured_data: dict
+
+@router.get("/", response_class=HTMLResponse)
+def serve_frontend(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@router.post("/generate-soap")
+def generate_structured_soap(request: TranscriptRequest, db: Session = Depends(get_db)):
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Transcript text cannot be empty.")
+    
+    try:
+        ai_result = process_text_to_soap(request.text.strip(), db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    if request.return_pdf:
+        pdf_buffer = create_soap_pdf(soap_data=ai_result["data"], transcript=ai_result["transcript"])
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        return StreamingResponse(
+            pdf_buffer, media_type="application/pdf", 
+            headers={"Content-Disposition": f"attachment; filename=SOAP_Note_{timestamp}.pdf"}
+        )
+    return ai_result
+
+@router.post("/upload-audio")
+async def process_audio_dictation(file: UploadFile = File(...), return_pdf: bool = Form(False), db: Session = Depends(get_db)):
+    logger.info(f"Received audio file: {file.filename}")
+    if not file.filename.endswith(('.wav', '.mp3', '.m4a', '.ogg', '.webm')):
+         raise HTTPException(status_code=400, detail="Unsupported file format.")
+
+    try:
+        file_ext = os.path.splitext(file.filename)[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_audio:
+            content = await file.read()
+            temp_audio.write(content)
+            temp_file_path = temp_audio.name
+            
+        logger.info("Transcribing audio")
+        prompt = "Patient presents with a cough. Chest X-ray is clear. Diagnosis is bronchitis. Will prescribe albuterol."
+        
+        
+        segments, info = whisper_model.transcribe(temp_file_path, beam_size=5, initial_prompt=prompt)
+        full_transcript = "".join([segment.text + " " for segment in segments]).strip()
+        logger.info(f"👂 Whisper heard exactly this: '{full_transcript}'")
+        
+        if not full_transcript:
+             raise HTTPException(status_code=400, detail="Could not detect any speech in audio.")
+
+        
+        ai_result = process_text_to_soap(full_transcript, db)
+        
+        if return_pdf:
+            pdf_buffer = create_soap_pdf(soap_data=ai_result["data"], transcript=ai_result["transcript"])
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            return StreamingResponse(
+                pdf_buffer, media_type="application/pdf", 
+                headers={"Content-Disposition": f"attachment; filename=Voice_SOAP_{timestamp}.pdf"}
+            )
+        return ai_result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing audio file.")
+    finally:
+        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+@router.get("/notes")
+def get_all_saved_notes(limit: int = 10, db: Session = Depends(get_db)):
+    notes = db.query(SoapNoteRecord).order_by(SoapNoteRecord.created_at.desc()).limit(limit).all()
+    return {"total_returned": len(notes), "notes": notes}
+
+@router.get("/notes/{note_id}/pdf")
+def download_past_pdf(note_id: int, db: Session = Depends(get_db)):
+    record = db.query(SoapNoteRecord).filter(SoapNoteRecord.id == note_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Note #{note_id} not found.")
+    pdf_buffer = create_soap_pdf(soap_data=record.structured_data, transcript=record.raw_transcript)
+    timestamp = record.created_at.strftime("%Y%m%d")
+    return StreamingResponse(
+        pdf_buffer, media_type="application/pdf", 
+        headers={"Content-Disposition": f"attachment; filename=Archived_SOAP_{note_id}_{timestamp}.pdf"}
+    )
+
+@router.post("/submit-feedback")
+def submit_ai_correction(request: FeedbackRequest, db: Session = Depends(get_db)):
+    clean_label = request.correct_label.strip().upper()
+    if clean_label not in ["S", "O", "A", "P"]:
+        raise HTTPException(status_code=400, detail="Label must be S, O, A, or P.")
+    try:
+        new_feedback = FeedbackRecord(note_id=request.note_id, sentence=request.sentence.strip(), correct_label=clean_label)
+        db.add(new_feedback)
+        db.commit()
+        logger.info(f"📈 Feedback saved! Sentence '{request.sentence}' categorized as {clean_label}.")
+        return {"status": "success", "message": "Correction saved successfully."}
+    except Exception as e:
+        logger.error(f"⚠️ Failed to save feedback: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save correction to database.")
+
+@router.put("/notes/{note_id}")
+def update_saved_note(note_id: int, request: UpdateNoteRequest, db: Session = Depends(get_db)):
+    """Allows the doctor to overwrite the AI's initial categorization before downloading the PDF."""
+    record = db.query(SoapNoteRecord).filter(SoapNoteRecord.id == note_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Note #{note_id} not found.")
+    
+    # Overwrite the old AI data with the doctor's manually edited data
+    record.structured_data = request.structured_data
+    db.commit()
+    
+    return {"status": "success", "message": "Note updated successfully."}

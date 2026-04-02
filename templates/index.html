@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedSOAP AI | Clinical Dictation</title>
+    <link rel="stylesheet" href="/static/style.css?v=3">
+    <style>
+        .btn-history {
+            background: #334155;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-left: 15px;
+        }
+
+        .btn-history:hover {
+            background: #475569;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            right: -350px;
+            width: 350px;
+            height: 100vh;
+            background: #f8fafc;
+            box-shadow: -4px 0 15px rgba(0, 0, 0, 0.1);
+            transition: right 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #e2e8f0;
+        }
+
+        .sidebar.open {
+            right: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background: #1e293b;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .sidebar-content {
+            padding: 15px;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .history-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .history-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border-color: #3b82f6;
+        }
+
+        .history-date {
+            font-size: 12px;
+            color: #64748b;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .history-preview {
+            font-size: 14px;
+            color: #334155;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ehr-container">
+        <header class="ehr-header">
+            <div class="header-title">
+                <h1>🩺 MedSOAP AI</h1>
+                <p>Clinical Dictation & Auto-Charting Engine</p>
+            </div>
+            <div class="header-status">
+                <span class="status-indicator"></span> System Online
+                <button id="toggleSidebarBtn" class="btn-history">📁 Past Cases</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="dictation-controls">
+                <button id="recordBtn" class="btn-massive btn-record">
+                    <span class="icon">🎙️</span> Start Dictation
+                </button>
+                <button id="stopBtn" class="btn-massive btn-stop" disabled>
+                    <span class="icon">⏹️</span> Stop & Process
+                </button>
+            </div>
+
+            <div id="status" class="status-msg">Ready for patient encounter...</div>
+
+            <div class="chart-section">
+                <div id="soapGrid" class="soap-grid" style="display: none;">
+                    <div class="chart-header">
+                        <h3>Encounter Note <span id="saveStatus"
+                                style="font-size: 14px; font-weight: normal; color: #64748b; margin-left: 15px;"></span>
+                        </h3>
+                        <button id="downloadBtn" class="btn-download" style="display: none;">
+                            💾 Save & Export PDF
+                        </button>
+                    </div>
+
+                    <div class="soap-box" id="box-S">
+                        <h4><span class="badge subjective">S</span> Subjective (History of Present Illness)</h4>
+                        <ul id="list-S"></ul>
+                    </div>
+                    <div class="soap-box" id="box-O">
+                        <h4><span class="badge objective">O</span> Objective (Physical Exam & Labs)</h4>
+                        <ul id="list-O"></ul>
+                    </div>
+                    <div class="soap-box" id="box-A">
+                        <h4><span class="badge assessment">A</span> Assessment (Diagnoses)</h4>
+                        <ul id="list-A"></ul>
+                    </div>
+                    <div class="soap-box" id="box-P">
+                        <h4><span class="badge plan">P</span> Plan (Treatment & Follow-up)</h4>
+                        <ul id="list-P"></ul>
+                    </div>
+                    <div class="soap-box needs-review" id="box-R" style="display: none;">
+                        <h4><span class="badge review">⚠️</span> Uncategorized (Needs Doctor Review)</h4>
+                        <ul id="list-R"></ul>
+                    </div>
+                </div>
+
+                <div id="jsonPlaceholder" class="empty-state">
+                    <p>No active dictation. Click "Start Dictation" or open "Past Cases" to begin charting.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="historySidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="margin:0; font-size: 18px;">Archived Cases</h2>
+            <button id="closeSidebarBtn" class="close-btn">&times;</button>
+        </div>
+        <div class="sidebar-content" id="pastNotesList">
+            <p style="text-align: center; color: #94a3b8; margin-top: 20px;">Loading cases...</p>
+        </div>
+    </div>
+
+    <script src="/static/script.js?v=3"></script>
+</body>
+
+</html>

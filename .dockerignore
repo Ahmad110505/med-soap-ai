@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+.env
+clinical_notes.db
+*.pyc
+.git

@@ -1,0 +1,352 @@
+/* --- CLINICAL EHR THEME --- */
+:root {
+    --primary-blue: #2563eb;
+    --dark-blue: #1e3a8a;
+    --danger-red: #dc2626;
+    --neutral-gray: #64748b;
+    --success-green: #16a34a;
+    --bg-color: #f1f5f9;
+    --surface-white: #ffffff;
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --border-light: #e2e8f0;
+}
+
+body {
+    background-color: var(--bg-color);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-main);
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.ehr-container {
+    width: 100%;
+    max-width: 1000px;
+    background: var(--surface-white);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+/* Header */
+.ehr-header {
+    background-color: var(--dark-blue);
+    color: white;
+    padding: 25px 35px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 4px solid var(--primary-blue);
+}
+
+.ehr-header h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+.ehr-header p {
+    margin: 5px 0 0 0;
+    color: #cbd5e1;
+    font-size: 15px;
+}
+
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background-color: #4ade80;
+    border-radius: 50%;
+    margin-right: 8px;
+    box-shadow: 0 0 8px #4ade80;
+}
+
+main {
+    padding: 35px;
+}
+
+/* Massive Buttons */
+.dictation-controls {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.btn-massive {
+    flex: 1;
+    max-width: 350px;
+    padding: 20px 30px;
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.btn-massive:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn-massive:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-record {
+    background-color: var(--danger-red);
+    color: white;
+}
+
+.btn-record:hover:not(:disabled) {
+    background-color: #b91c1c;
+}
+
+.btn-stop {
+    background-color: var(--neutral-gray);
+    color: white;
+}
+
+.btn-stop:hover:not(:disabled) {
+    background-color: #475569;
+}
+
+/* Status Text */
+.status-msg {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin: 25px 0;
+    padding: 15px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px dashed var(--border-light);
+}
+
+/* Chart Area */
+.chart-section {
+    background: var(--surface-white);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 30px;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-light);
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--dark-blue);
+}
+
+.btn-download {
+    background-color: var(--success-green);
+    color: white;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-download:hover {
+    background-color: #15803d;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--neutral-gray);
+    font-size: 18px;
+    font-style: italic;
+    background: #f8fafc;
+    border-radius: 8px;
+}
+
+/* The SOAP Grid */
+.soap-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.soap-box {
+    background: #f8fafc;
+    border: 1px solid var(--border-light);
+    border-left: 6px solid var(--primary-blue);
+    border-radius: 8px;
+    padding: 20px;
+    transition: all 0.2s ease;
+}
+
+.soap-box h4 {
+    margin: 0 0 15px 0;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-main);
+}
+
+.soap-box ul {
+    margin: 0;
+    padding-left: 25px;
+    font-size: 18px;
+    line-height: 1.6;
+    color: #334155;
+    /* THIS IS THE FIX FOR THE FLAT BOX */
+    min-height: 80px !important;
+    padding-bottom: 20px !important;
+    display: block !important;
+    width: 100%;
+}
+
+/* Also add this to ensure the list items don't block the drop */
+.soap-box * {
+    pointer-events: auto;
+}
+
+.empty-placeholder {
+    color: #94a3b8 !important;
+    font-style: italic;
+    list-style: none !important;
+    pointer-events: none !important;
+    /* Forces mouse to ignore the text and hit the box */
+}
+
+/* --- DRAG AND DROP PHYSICS ADDED HERE --- */
+.soap-box li {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: grab;
+    /* Shows the grab hand cursor */
+    transition: background-color 0.2s;
+}
+
+.soap-box li:hover {
+    background-color: #e2e8f0;
+    /* Highlights what you are hovering over */
+}
+
+.soap-box li:active {
+    cursor: grabbing;
+    /* Closes the hand when dragging */
+    opacity: 0.6;
+}
+
+/* The placeholder text when a section is empty */
+.empty-placeholder {
+    color: #94a3b8 !important;
+    font-style: italic;
+    list-style: none !important;
+    background-color: transparent !important;
+    pointer-events: none;
+    /* CRITICAL: Prevents the mouse from grabbing the empty text */
+    margin-left: -25px;
+    /* Aligns it properly since it has no bullet point */
+}
+
+/* Visual feedback when dragging over a box (Triggered by JS) */
+.drag-active {
+    background-color: #e2e8f0 !important;
+    border: 2px dashed #64748b !important;
+}
+
+/* ---------------------------------------- */
+
+/* Clinical Badges */
+.badge {
+    color: white;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+#box-S {
+    border-left-color: #0ea5e9;
+}
+
+.badge.subjective {
+    background-color: #0ea5e9;
+}
+
+#box-O {
+    border-left-color: #8b5cf6;
+}
+
+.badge.objective {
+    background-color: #8b5cf6;
+}
+
+#box-A {
+    border-left-color: #f59e0b;
+}
+
+.badge.assessment {
+    background-color: #f59e0b;
+}
+
+#box-P {
+    border-left-color: #10b981;
+}
+
+.badge.plan {
+    background-color: #10b981;
+}
+
+#box-R {
+    border-left-color: var(--danger-red);
+    background-color: #fef2f2;
+}
+
+.badge.review {
+    background-color: var(--danger-red);
+}
+
+/* Animation */
+.recording-pulse {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 15px rgba(220, 38, 38, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+    }
+}

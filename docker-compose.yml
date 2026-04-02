@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  medsoap-app:
+    build: .
+    container_name: medsoap_hybrid
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # This maps your local database file to the container so past cases are saved!
+      - ./clinical_notes.db:/app/clinical_notes.db
+    restart: unless-stopped

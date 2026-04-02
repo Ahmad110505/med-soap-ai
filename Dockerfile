@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 8000
 
 # 8. Command to run the application (Must be 0.0.0.0 to work outside the container!)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 7860"]

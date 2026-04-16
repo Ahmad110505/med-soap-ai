@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from faster_whisper import WhisperModel
+from groq import Groq
 
 from database import get_db, SoapNoteRecord, FeedbackRecord
 from services.ai_engine import process_text_to_soap
@@ -16,9 +16,7 @@ from pdf_generator import create_soap_pdf
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-logger.info("Booting up Whisper...")
-whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
-logger.info("Whisper model ready.")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 class TranscriptRequest(BaseModel):
@@ -101,23 +99,23 @@ async def process_audio_dictation(
             temp_audio.write(content)
             temp_file_path = temp_audio.name
 
-        logger.info("Transcribing audio...")
+        logger.info("Transcribing audio with Groq...")
+
         prompt = (
             "Patient presents with a cough. Chest X-ray is clear. "
             "Diagnosis is bronchitis. Will prescribe albuterol."
         )
 
-        segments, info = whisper_model.transcribe(
-            temp_file_path,
-            beam_size=5,
-            initial_prompt=prompt
-        )
+        with open(temp_file_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                file=audio_file,
+                model="whisper-large-v3-turbo",
+                prompt=prompt
+            )
 
-        full_transcript = "".join(
-            [segment.text + " " for segment in segments]
-        ).strip()
+        full_transcript = (transcription.text or "").strip()
 
-        logger.info(f"Whisper transcript: '{full_transcript}'")
+        logger.info(f"Groq transcript: '{full_transcript}'")
 
         if not full_transcript:
             raise HTTPException(status_code=400, detail="Could not detect any speech in audio.")

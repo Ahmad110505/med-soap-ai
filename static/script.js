@@ -1,6 +1,9 @@
 let mediaRecorder;
 let audioChunks = [];
 let currentNoteId = null;
+let draggedItem = null;
+
+const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || "";
 
 const recordBtn = document.getElementById('recordBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -10,7 +13,7 @@ const jsonPlaceholder = document.getElementById('jsonPlaceholder');
 const downloadBtn = document.getElementById('downloadBtn');
 const saveStatus = document.getElementById('saveStatus');
 
-// NEW: Review Panel
+// Review Panel
 const reviewPanel = document.getElementById('reviewPanel');
 
 // Sidebar Elements
@@ -19,120 +22,64 @@ const closeSidebarBtn = document.getElementById('closeSidebarBtn');
 const historySidebar = document.getElementById('historySidebar');
 const pastNotesList = document.getElementById('pastNotesList');
 
-// --- 1. CORE UI LOGIC (Shared by Mic and Sidebar) ---
-function renderSoapNoteToGrid(noteId, soapData, reviewData) {
-    currentNoteId = noteId;
-    jsonPlaceholder.style.display = 'none';
-    soapGrid.style.display = 'grid';
-    saveStatus.innerText = "";
-    downloadBtn.style.display = "inline-block";
-
-    const populateList = (listId, items) => {
-        const ul = document.getElementById(listId);
-        ul.innerHTML = '';
-        if (items && items.length > 0) {
-            items.forEach(item => ul.appendChild(createEditableItem(item.text)));
-        } else {
-            ul.innerHTML = '<li class="empty-placeholder">None noted.</li>';
-        }
-    };
-
-    populateList('list-S', soapData.Subjective);
-    populateList('list-O', soapData.Objective);
-    populateList('list-A', soapData.Assessment);
-    populateList('list-P', soapData.Plan);
-
-    if (soapData.Needs_Review && soapData.Needs_Review.length > 0) {
-        document.getElementById('box-R').style.display = 'block';
-        populateList('list-R', soapData.Needs_Review);
-    } else {
-        document.getElementById('box-R').style.display = 'none';
-    }
-
-    // NEW: Render the Review Panel!
-    if (reviewData) {
-        reviewPanel.style.display = 'block';
-
-        // Quality Summary
-        const ulQuality = document.getElementById('review-quality');
-        ulQuality.innerHTML = '';
-        if (reviewData.note_quality_summary) {
-            reviewData.note_quality_summary.forEach(text => {
-                ulQuality.innerHTML += `<li>${text}</li>`;
-            });
-        }
-
-        // Missing Items
-        const ulMissing = document.getElementById('review-missing');
-        ulMissing.innerHTML = '';
-        if (reviewData.missing_or_incomplete_documentation && reviewData.missing_or_incomplete_documentation.length > 0) {
-            reviewData.missing_or_incomplete_documentation.forEach(item => {
-                ulMissing.innerHTML += `<li><b>${item.item}:</b> ${item.recommendation}</li>`;
-            });
-        } else {
-            ulMissing.innerHTML = '<li>None identified.</li>';
-        }
-
-        // High Risk / Red Flags
-        const ulRisk = document.getElementById('review-risk');
-        ulRisk.innerHTML = '';
-        if (reviewData.high_risk_documentation_prompts && reviewData.high_risk_documentation_prompts.length > 0) {
-            reviewData.high_risk_documentation_prompts.forEach(item => {
-                ulRisk.innerHTML += `<li><b>${item.item}:</b> ${item.recommendation}</li>`;
-            });
-        } else {
-            ulRisk.innerHTML = '<li>None identified.</li>';
-        }
-
-        // ICD-10
-        const ulIcd10 = document.getElementById('review-icd10');
-        ulIcd10.innerHTML = '';
-        if (reviewData.icd10_suggestions_beta && reviewData.icd10_suggestions_beta.length > 0) {
-            reviewData.icd10_suggestions_beta.forEach(item => {
-                ulIcd10.innerHTML += `<li><b>${item.code}</b>: ${item.label} <br><span style="font-size: 11px; color:#94a3b8;">(${item.reason})</span></li>`;
-            });
-        } else {
-            ulIcd10.innerHTML = '<li>No reliable suggestions based on current documentation.</li>';
-        }
-
-        document.getElementById('review-disclaimer').innerText = reviewData.final_disclaimer || "";
-    } else {
-        // If viewing an old case that didn't have review data, hide the panel
-        reviewPanel.style.display = 'none';
-    }
-
-    setupDragAndDrop();
-    statusText.innerHTML = `✅ <span style="color: #16a34a; font-weight: bold;">Viewing Note #${noteId}. You can edit and save changes.</span>`;
+function apiUrl(path) {
+    return `${API_BASE_URL}${path}`;
 }
 
+async function parseApiResponse(response) {
+    const contentType = response.headers.get("content-type") || "";
 
-// --- 2. BULLETPROOF DRAG AND DROP ENGINE ---
-let draggedItem = null;
-
-function setupDragAndDrop() {
-    const boxes = document.querySelectorAll('.soap-box');
-    boxes.forEach(box => {
-        box.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; box.classList.add('drag-active'); });
-        box.addEventListener('dragenter', e => { e.preventDefault(); box.classList.add('drag-active'); });
-        box.addEventListener('dragleave', e => { if (!box.contains(e.relatedTarget)) box.classList.remove('drag-active'); });
-        box.addEventListener('drop', e => {
-            e.preventDefault();
-            box.classList.remove('drag-active');
-            if (draggedItem) {
-                let ul = box.querySelector('ul');
-                if (!ul) { ul = document.createElement('ul'); box.appendChild(ul); }
-                const placeholder = ul.querySelector('.empty-placeholder');
-                if (placeholder) placeholder.remove();
-                ul.appendChild(draggedItem);
-                saveStatus.innerText = "✍️ Unsaved changes...";
-                saveStatus.style.color = "#dc2626";
+    if (!response.ok) {
+        let message = `Request failed (${response.status})`;
+        try {
+            if (contentType.includes("application/json")) {
+                const err = await response.json();
+                message = err.detail || err.message || message;
+            } else {
+                const text = await response.text();
+                if (text) message = text;
             }
+        } catch (_) { }
+        throw new Error(message);
+    }
+
+    if (contentType.includes("application/json")) {
+        return response.json();
+    }
+
+    return response;
+}
+
+function setStatus(html) {
+    statusText.innerHTML = html;
+}
+
+function setSaveStatus(text, color) {
+    saveStatus.innerText = text;
+    saveStatus.style.color = color;
+}
+
+function markUnsaved() {
+    setSaveStatus("✍️ Unsaved changes...", "#dc2626");
+}
+
+function populateReviewList(elementId, items, formatter, emptyText) {
+    const ul = document.getElementById(elementId);
+    ul.innerHTML = '';
+
+    if (Array.isArray(items) && items.length > 0) {
+        items.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = formatter(item);
+            ul.appendChild(li);
         });
-    });
+    } else {
+        ul.innerHTML = `<li>${emptyText}</li>`;
+    }
 }
 
 function createEditableItem(text) {
-    let li = document.createElement('li');
+    const li = document.createElement('li');
     li.innerText = text;
     li.setAttribute('draggable', 'true');
     li.setAttribute('contenteditable', 'true');
@@ -140,9 +87,11 @@ function createEditableItem(text) {
 
     li.addEventListener('dragstart', function (e) {
         draggedItem = this;
-        e.dataTransfer.setData('text/plain', text);
+        e.dataTransfer.setData('text/plain', this.innerText);
         e.dataTransfer.effectAllowed = 'move';
-        setTimeout(() => this.style.opacity = '0.4', 0);
+        setTimeout(() => {
+            this.style.opacity = '0.4';
+        }, 0);
     });
 
     li.addEventListener('dragend', function () {
@@ -151,120 +100,281 @@ function createEditableItem(text) {
     });
 
     li.addEventListener('input', () => {
-        saveStatus.innerText = "✍️ Unsaved changes...";
-        saveStatus.style.color = "#dc2626";
+        markUnsaved();
     });
 
     return li;
 }
 
-// --- 3. RECORDING AND API LOGIC ---
+function populateSoapList(listId, items) {
+    const ul = document.getElementById(listId);
+    ul.innerHTML = '';
+
+    if (Array.isArray(items) && items.length > 0) {
+        items.forEach(item => {
+            ul.appendChild(createEditableItem(item.text || ""));
+        });
+    } else {
+        ul.innerHTML = '<li class="empty-placeholder">None noted.</li>';
+    }
+}
+
+function renderReviewPanel(reviewData) {
+    if (!reviewData) {
+        reviewPanel.style.display = 'none';
+        return;
+    }
+
+    reviewPanel.style.display = 'block';
+
+    populateReviewList(
+        'review-quality',
+        reviewData.note_quality_summary || [],
+        text => `${text}`,
+        'None identified.'
+    );
+
+    populateReviewList(
+        'review-missing',
+        reviewData.missing_or_incomplete_documentation || [],
+        item => `<b>${item.item || "Item"}:</b> ${item.recommendation || ""}`,
+        'None identified.'
+    );
+
+    populateReviewList(
+        'review-risk',
+        reviewData.high_risk_documentation_prompts || [],
+        item => `<b>${item.item || "Item"}:</b> ${item.recommendation || ""}`,
+        'None identified.'
+    );
+
+    populateReviewList(
+        'review-icd10',
+        reviewData.icd10_suggestions_beta || [],
+        item => `<b>${item.code || "N/A"}</b>: ${item.label || "Unnamed"} <br><span style="font-size: 11px; color:#94a3b8;">(${item.reason || "No reason provided"})</span>`,
+        'No reliable suggestions based on current documentation.'
+    );
+
+    document.getElementById('review-disclaimer').innerText =
+        reviewData.final_disclaimer || "";
+}
+
+function renderSoapNoteToGrid(noteId, soapData, reviewData = null) {
+    currentNoteId = noteId;
+    jsonPlaceholder.style.display = 'none';
+    soapGrid.style.display = 'grid';
+    downloadBtn.style.display = "inline-block";
+    setSaveStatus("", "#64748b");
+
+    populateSoapList('list-S', soapData?.Subjective || []);
+    populateSoapList('list-O', soapData?.Objective || []);
+    populateSoapList('list-A', soapData?.Assessment || []);
+    populateSoapList('list-P', soapData?.Plan || []);
+
+    const needsReviewBox = document.getElementById('box-R');
+    if (soapData?.Needs_Review && soapData.Needs_Review.length > 0) {
+        needsReviewBox.style.display = 'block';
+        populateSoapList('list-R', soapData.Needs_Review);
+    } else {
+        needsReviewBox.style.display = 'none';
+        document.getElementById('list-R').innerHTML = '';
+    }
+
+    renderReviewPanel(reviewData);
+    setupDragAndDrop();
+
+    setStatus(`✅ <span style="color: #16a34a; font-weight: bold;">Viewing Note #${noteId}. You can edit and save changes.</span>`);
+}
+
+function setupDragAndDrop() {
+    const boxes = document.querySelectorAll('.soap-box');
+
+    boxes.forEach(box => {
+        box.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            box.classList.add('drag-active');
+        });
+
+        box.addEventListener('dragenter', e => {
+            e.preventDefault();
+            box.classList.add('drag-active');
+        });
+
+        box.addEventListener('dragleave', e => {
+            if (!box.contains(e.relatedTarget)) {
+                box.classList.remove('drag-active');
+            }
+        });
+
+        box.addEventListener('drop', e => {
+            e.preventDefault();
+            box.classList.remove('drag-active');
+
+            if (!draggedItem) return;
+
+            let ul = box.querySelector('ul');
+            if (!ul) {
+                ul = document.createElement('ul');
+                box.appendChild(ul);
+            }
+
+            const placeholder = ul.querySelector('.empty-placeholder');
+            if (placeholder) placeholder.remove();
+
+            ul.appendChild(draggedItem);
+            markUnsaved();
+        });
+    });
+}
+
+function scrapeList(listId) {
+    const items = document.querySelectorAll(`#${listId} li`);
+    return Array.from(items)
+        .filter(li => !li.classList.contains('empty-placeholder'))
+        .map(li => ({
+            text: li.innerText.trim(),
+            confidence: 100
+        }))
+        .filter(item => item.text !== "" && item.text !== "None noted.");
+}
+
+async function uploadAudioForProcessing(audioBlob) {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'live_dictation.webm');
+
+    const response = await fetch(apiUrl('/upload-audio'), {
+        method: 'POST',
+        body: formData
+    });
+
+    return parseApiResponse(response);
+}
+
+async function saveCurrentNote(noteId, updatedData) {
+    const response = await fetch(apiUrl(`/notes/${noteId}`), {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ structured_data: updatedData })
+    });
+
+    return parseApiResponse(response);
+}
+
+async function fetchPastNotes(limit = 15) {
+    const response = await fetch(apiUrl(`/notes?limit=${limit}`), {
+        method: 'GET'
+    });
+
+    return parseApiResponse(response);
+}
+
 recordBtn.onclick = async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
         mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.start();
         audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => {
+            if (e.data && e.data.size > 0) {
+                audioChunks.push(e.data);
+            }
+        };
+
+        mediaRecorder.onstop = async () => {
+            try {
+                recordBtn.classList.remove('recording-pulse');
+                setStatus('🧠 <span style="color: #2563eb;">AI reasoning pipeline active. Transcribing & Drafting...</span>');
+
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const data = await uploadAudioForProcessing(audioBlob);
+
+                if (data && data.data) {
+                    renderSoapNoteToGrid(data.note_id, data.data, data.review_panel || null);
+                } else {
+                    setStatus('❌ <span style="color: #dc2626;">Backend returned an unexpected response.</span>');
+                }
+            } catch (err) {
+                console.error(err);
+                setStatus(`❌ <span style="color: #dc2626;">${err.message || "Error processing response."}</span>`);
+            } finally {
+                stream.getTracks().forEach(track => track.stop());
+                recordBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        };
+
+        mediaRecorder.start();
 
         recordBtn.classList.add('recording-pulse');
         recordBtn.disabled = true;
         stopBtn.disabled = false;
-        statusText.innerHTML = '<span style="color: #dc2626; font-weight: bold;">🎙️ Listening... Speak your clinical note clearly.</span>';
-
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-
-        mediaRecorder.onstop = async () => {
-            recordBtn.classList.remove('recording-pulse');
-            statusText.innerHTML = '🧠 <span style="color: #2563eb;">AI reasoning pipeline active. Transcribing & Drafting...</span>';
-
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'live_dictation.webm');
-
-            try {
-                const response = await fetch('/upload-audio', { method: 'POST', body: formData });
-                const data = await response.json();
-                if (data && data.data) {
-                    // WE NOW PASS THE REVIEW PANEL DATA TO THE UI!
-                    renderSoapNoteToGrid(data.note_id, data.data, data.review_panel);
-                }
-            } catch (err) {
-                statusText.innerText = '❌ Error processing response.';
-                console.error(err);
-            }
-        };
+        setStatus('<span style="color: #dc2626; font-weight: bold;">🎙️ Listening... Speak your clinical note clearly.</span>');
     } catch (err) {
-        statusText.innerText = '❌ Microphone access denied.';
+        console.error(err);
+        setStatus('❌ <span style="color: #dc2626;">Microphone access denied or unavailable.</span>');
     }
 };
 
 stopBtn.onclick = () => {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+
     mediaRecorder.stop();
-    recordBtn.disabled = false;
+    recordBtn.disabled = true;
     stopBtn.disabled = true;
     statusText.innerText = '⏳ Processing... (This might take a few seconds for the multi-layer pipeline)';
 };
 
-// --- 4. SAVE AND EXPORT LOGIC ---
 downloadBtn.onclick = async () => {
     if (!currentNoteId) return;
-    saveStatus.innerText = "⏳ Saving...";
-    saveStatus.style.color = "#2563eb";
+
+    setSaveStatus("⏳ Saving...", "#2563eb");
     downloadBtn.disabled = true;
 
-    const scrapeList = (listId) => {
-        const items = document.querySelectorAll(`#${listId} li`);
-        return Array.from(items)
-            .filter(li => !li.classList.contains('empty-placeholder') && li.innerText.trim() !== "None noted.")
-            .map(li => ({ text: li.innerText.trim(), confidence: 100 }));
-    };
-
     const updatedData = {
-        "Subjective": scrapeList('list-S'),
-        "Objective": scrapeList('list-O'),
-        "Assessment": scrapeList('list-A'),
-        "Plan": scrapeList('list-P'),
-        "Needs_Review": scrapeList('list-R')
+        Subjective: scrapeList('list-S'),
+        Objective: scrapeList('list-O'),
+        Assessment: scrapeList('list-A'),
+        Plan: scrapeList('list-P'),
+        Needs_Review: scrapeList('list-R')
     };
 
     try {
-        await fetch(`/notes/${currentNoteId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ structured_data: updatedData })
-        });
-        saveStatus.innerText = "✅ Saved!";
-        saveStatus.style.color = "#16a34a";
-        window.location.href = `/notes/${currentNoteId}/pdf`;
+        await saveCurrentNote(currentNoteId, updatedData);
+        setSaveStatus("✅ Saved!", "#16a34a");
+        window.open(apiUrl(`/notes/${currentNoteId}/pdf`), '_blank', 'noopener');
     } catch (error) {
-        saveStatus.innerText = "❌ Failed to save";
-        saveStatus.style.color = "#dc2626";
         console.error("Save error:", error);
+        setSaveStatus("❌ Failed to save", "#dc2626");
     } finally {
         downloadBtn.disabled = false;
     }
 };
 
-// --- 5. SIDEBAR & PAST CASES LOGIC ---
 toggleSidebarBtn.onclick = async () => {
     historySidebar.classList.add('open');
     pastNotesList.innerHTML = '<p style="text-align: center; color: #64748b;">Fetching records...</p>';
 
     try {
-        const response = await fetch('/notes?limit=15');
-        const data = await response.json();
+        const data = await fetchPastNotes(15);
+        pastNotesList.innerHTML = '';
 
-        pastNotesList.innerHTML = ''; // Clear loading text
-
-        if (data.notes.length === 0) {
+        if (!data.notes || data.notes.length === 0) {
             pastNotesList.innerHTML = '<p style="text-align: center; color: #64748b;">No past cases found.</p>';
             return;
         }
 
         data.notes.forEach(note => {
-            const dateStr = new Date(note.created_at).toLocaleString();
-            // Get a snippet of the transcript for the preview
-            const previewText = note.raw_transcript ? note.raw_transcript.substring(0, 50) + '...' : 'No audio transcript available.';
+            const dateStr = note.created_at
+                ? new Date(note.created_at).toLocaleString()
+                : 'Unknown date';
+
+            const previewText = note.raw_transcript
+                ? `${note.raw_transcript.substring(0, 50)}...`
+                : 'No audio transcript available.';
 
             const card = document.createElement('div');
             card.className = 'history-card';
@@ -273,18 +383,16 @@ toggleSidebarBtn.onclick = async () => {
                 <div class="history-preview">"${previewText}"</div>
             `;
 
-            // When clicked, close sidebar and render the note!
             card.onclick = () => {
                 historySidebar.classList.remove('open');
-                // We pass null for review_panel since it isn't fetched from the DB in this version
                 renderSoapNoteToGrid(note.id, note.structured_data, null);
             };
 
             pastNotesList.appendChild(card);
         });
     } catch (err) {
-        pastNotesList.innerHTML = '<p style="color: red; text-align:center;">Failed to load cases.</p>';
         console.error(err);
+        pastNotesList.innerHTML = `<p style="color: red; text-align:center;">${err.message || "Failed to load cases."}</p>`;
     }
 };
 
